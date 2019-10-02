@@ -70,13 +70,15 @@
   `unsubscribe [channle [channle ...]]`：取消订阅
 
   <div align="center"><img src="img/发布订阅二.bmp" style="center"></div><br>
-`psubscribe pattern [pattern ...]`：按照模式订阅
   
-<div align="center"><img src="img/发布订阅一.bmp" style="center"></div><br>
-  `punsubscribe pattern [pattern ...]`：按照模式取消订阅
-
+  `psubscribe pattern [pattern ...]`：按照模式订阅
+  
+  <div align="center"><img src="img/发布订阅一.bmp" style="center"></div><br>
+  
+  `punsubscribe pattern [pattern ...]`：安装模式取消订阅
+  
   `pubsub numpat`：查看模式订阅数
-
+  
   `pubsub numsub [channle ...]`：查看频道订阅数
 
 ### 客户端通信协议
@@ -97,12 +99,12 @@
   - 自动触发：在配置文件的SNAPSHOTTING栏，如下为默认配置。 `save m n`表示m秒内数据集存在n次修改就自动触发`bgsave`。可通过`save ""`关闭自动触发。
 
 <div align="center"><img src="img/持久化一.bmp" style="center"></div><br>
-- `bgsave`执行流程：
-1. 执行`bgsave`命令，父进程判断当前是否存在正在执行的子进程，如RDB/AOF。如果存在`bgsave`命令就直接返回。
-	2. 父进程执行fork操作，自身阻塞。
-	3. fork完成后`bgsave`命令返回`background saving started`信息并不再阻塞父进程。
-	4. 子进程创建RDB文件并对原有文件进行原子替换。
-	5. 进程发送信号给父进程表示完成，父进程更新统计信息。
+- `bgsave`执行流程：  
+1. 执行`bgsave`命令，父进程判断当前是否存在正在执行的子进程，如RDB/AOF。如果存在`bgsave`命令就直接返回。  
+2. 父进程执行fork操作，自身阻塞。  
+3. fork完成后`bgsave`命令返回`background saving started`信息并不再阻塞父进程。  
+4. 子进程创建RDB文件并对原有文件进行原子替换。  
+5. 进程发送信号给父进程表示完成，父进程更新统计信息。
 - RDB优缺点
   - 优点
     1. RDB是一个紧凑压缩的二进制文件(LZF压缩算法)，适合备份和容灾恢复。
