@@ -70,12 +70,8 @@
   `unsubscribe [channle [channle ...]]`：取消订阅
 
   <div align="center"><img src="img/发布订阅二.bmp" style="center"></div><br>
-  
-  
   `psubscribe pattern [pattern ...]`：按照模式订阅
 <div align="center"><img src="img/发布订阅一.bmp" style="center"></div><br>
-  	
-
   	`punsubscribe pattern [pattern ...]`：安装模式取消订阅
 
 ​	  `pubsub numpat`：查看模式订阅数
@@ -369,3 +365,144 @@
   
       ​	通常一台机器上部署多个Redis。当机器故障重启恢复时，会有大量从节点进行全量复制。
   	​	解决方案：主节点所在机器故障后提供故障转移机制。
+
+### 阻塞
+
+#### 发现阻塞
+
+​	当Redis阻塞时，线上应用服务应该最先感知到，常见做法是在应用方加入异常统计并通过邮件/短信报警。可通过日志系统统计异常。
+
+#### 内在原因
+
+##### api或数据结构使用不合理
+
+1. 发现慢查询
+
+   解决方案：修改算法复杂度低的命令，比如`hgetall`改为`hmget`等；把大对象拆分成小对象。
+
+2. 如何发现大对象
+
+   Redis本身提供发现大对象的命令`redis-cli -h {ip} -p {port} --bigkeys`，内部原理采用分段进行scan。
+
+##### cpu饱和
+
+​	cpu饱和指Redis把单核CPU使用率跑到接近100%，可通过`top`命令查看Redis进程的CPU使用率，用`redis-cli -h {ip} -p {port} --stat`查看redis使用情况。如果每秒处理请求过多，需要做集群化水平扩展来分摊OPS压力。
+
+##### 持久化阻塞
+
+ 1. fork阻塞
+
+    ​	发生在RDB和AOF重写时。解决方案：见持久化部分fork阻塞解决方案
+
+ 2. aof刷盘阻塞
+
+    ​	解决方案：见持久化部分fork阻塞解决方案
+
+ 3. HugePage阻塞
+
+#### 外在原因
+
+	##### cpu竞争
+
+##### 内存交换
+
+##### 网络问题
+
+### 哨兵
+
+	#### 基本概念
+
+​	**Redis Sentinel 是Redis高可用的实现方案。**
+
+	##### 主从复制问题	
+
+​	好处：从节点可作为主节点数据的备份；扩展主节点读能力。
+
+​	问题：
+
+		1. 一旦主节点出现故障，需要手动将一个从节点升为主节点，并且更新客户端的主节点地址，命令其他的从节点复制新的主节点。
+  		2. 主节点写能力受单机限制。
+  		3. 主节点存储能力受单机限制。
+
+##### Redsi Sentinel 的高可用性
+
+​		**Redis是一个分布式架构，其中包含若干个Sentinel节点和Redis数据节点，每个Sentinel节点会对数据节点和其余Sentinel节点进行监控，当它发现节点不可达时，会对节点做下线标识。如果被标识的是主节点，它还会和其他Sentinel节点进行“协商”，当大多数Sentinel节点都认为主节点不可达时，它们就会选举出一个Sentinel节点来完成自动故障转移的工作，同时会将这个变化实时通知给客户端。整个过程完全自动。**
+
+​		Redis Sentinel包含若干Sentinel节点，一方面防止误判，另一方即使个别Sentinel节点不可用，整个Sentinel节点集合依旧健壮。Sentinel节点就是不存储数据，只支持部分命令的Redis节点
+
+##### 配置
+
+​	因为每个Sentinel节点也是一个Redis节点，所以有一个sentinel.conf配置文件。
+
+​	`port` ：Sentinel节点的端口
+
+​	`dir`：Sentinel节点工作目录
+
+​	`sentinel monitor <master-name> <ip> <port> <quorum>`：前三个参数表示Sentinel要监控的主节点的名称、IP、端口，quorum表示判断主节点最终不可到达所需的票数。Sentinel可以从主节点中获取有关从节点及其余Sentinel节点的相关信息。
+
+​	`sentinel down-after-milliseconds <master-name> <times>`：每个Sentinel节点都要通过定期发送Ping命令判断Redis数据节点和其余Sentinel节点是否可达，如果超过了times没有有效的回复，就判断不可达。
+
+​	`sentinel parallel-syncs <master-name> <nums>`：Sentinel节点集合对主节点故障判断达成一致时，会做故障转移，原来从节点会向新的主节点发起复制操作。parallel-syncs用来限制一次故障转移后，每次向新节点发起复制操作的从节点个数。
+
+​	`sentinel failover-timeover <master-name> <times>`：故障转移超时时间
+
+​	`sentinel auth-pass <master-name> <password>`：如果Sentinel监控的主节点设置了密码，这里就要添加密码。防止无法监控。
+
+​	`sentinel notification-script <master-name> <script-path>`：故障转移期间，当一些警告级别的Sentinel事件发生(客观下线、主观下线)时，会触发对应路径的脚本。并向脚本发送相应的事件参数。
+
+​	`sentinel client-reconfig-script <master-name> <script-path>`：故障转移结束后，会触发对应路径脚本。并向脚本发送故障转移结果的相关参数。
+
+​	Redsi Sentinel可以同时监控多个主节点，通过master-name区分即可。
+
+#### 客户端连接
+
+​	主节点可通过master-name进行标识，所有客户端连接Redis Sentinel，必须有Sentinel节点集合和
+
+master-name两个参数。
+
+​	客户端需要遍历Sentinel节点集合，获取一个可用的Sentinel节点，通过`sentinel get-master-addr-by-name <master-name>`获取对应主节点信息，验证当前主节点是真正的主节点并和Sentinel节点集合保持联系，时刻获取主节点相关信息。
+
+#### Redis Sentinel实现原理
+
+	##### 三个定时监控任务
+
+	1. 每隔10s，每个Sentinel节点会向主节点和从节点发送`info`命令获取最新的拓扑结构。
+	2. 每隔2s，每个Sentinel节点会向Redis数据节点的`_sentinel_:hello`频道发送该Sentinel节点对于主节点的判断以及当前Sentinel节点信息，每隔Sentinel节点也会订阅该频道，来了解其他Sentinel节点。
+	3. 每隔1s，每个Sentinel节点会向主节点、从节点、其余Sentinel节点发送一条ping命令做一次心跳检测，来确认这些节点是否可达。
+
+##### 客观下线和主观下线
+
+​	主观下线：每个Sentinel节点会每隔1s对主节点、从节点、其他Sentinel节点发送ping命令做心跳检测。当这些节点超过`down-after-milliseconds`没进行有效回复就做失败判定。
+
+​	客观下线：当Sentinel主观下线的节点是主节点时，就会通过`sentinel is-master-down-by-addr <ip> <port> <current_epoch> <runid>`命令向其他Sentinel节点询问对主节点的判断，当超过`<quorum>`个数，就认为该主节点有问题。
+
+​		ip：主节点ip
+
+​		port：主节点端口
+
+​		current_epoch：当前配置纪元
+
+​		runid：等于"*"，Sentinel节点直接交换对主节点下线的判定；等于当前Sentinel节点的runid，当前Sentinel节点希望目标Sentinel节点同意自己成为领导者的请求。
+
+##### 领导者Sentinel节点选举
+
+​		如果Sentinel节点对主节点做了客观下线，就需要一个Sentinel节点来完成故障转移工作。所以Sentinel节点间会选举。选举大概思路：
+
+		1. 每个在线的Sentinel节点都有资格成为领导者，当他确认主节点客观下线时，会向其他Sentinel节点发送`sentinel is-master-down-by-addr`命令，要求将自己设为领导者。
+  		2. 收到命令的Sentinel节点，如果没有同意过其他Sentinel节点的请求，将同意该请求，否则拒绝。
+  		3. 如果该节点票数大于等于`max(quorum,num(sentinel)/2 + 1)`，那么它将成为领导者。
+  		4. 如果此过程没选举出领导者，将进行下次选举。
+
+##### 故障转移
+
+ 1. 领导者Sentinel节点选出一个节点作为新的主节点
+
+    - 过来主观下线、断线
+    - 选择复制偏移量大的
+    - 选择runid小的
+
+	2. 对选出来的节点执行`slaveof no one`命令使其成为主节点。
+
+	3. 领导者Sentinel节点向剩余从节点发送命令，让他们成为新主节点的从节点。
+
+    
