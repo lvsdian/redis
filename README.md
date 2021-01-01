@@ -87,7 +87,7 @@
 - 单线程模型中，如果某个命令执行时间过长，会阻塞其他命令，所以`Redis`是面向快速执行场景的数据库。
 
 ### 数据类型
-
+[参考](http://zhangtielei.com/posts/server.html)
 #### `string`
 
 - 内部编码
